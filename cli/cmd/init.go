@@ -41,7 +41,8 @@ Usage examples:
   drasi init --docker my-container
   drasi init --registry myregistry.io/drasi --version 0.1.0
   drasi init -n my-namespace
-  drasi init --generate-manifests --output-dir ./manifests
+  drasi init --manifest
+  drasi init --manifest=./manifests
 `,
 		Args: cobra.MinimumNArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -69,9 +70,19 @@ Usage examples:
 			}
 
 			// Check if manifest generation mode is enabled
-			generateManifests, err := cmd.Flags().GetBool("generate-manifests")
-			if err != nil {
-				return err
+			manifestFlag := cmd.Flags().Lookup("manifest")
+			generateManifests := manifestFlag.Changed
+
+			var outputDir string
+			if generateManifests {
+				manifestDir, err := cmd.Flags().GetString("manifest")
+				if err != nil {
+					return err
+				}
+				outputDir = manifestDir
+				if outputDir == "" {
+					outputDir = "./drasi-manifests"
+				}
 			}
 
 			var namespace string
@@ -81,15 +92,6 @@ Usage examples:
 
 			if generateManifests {
 				// Manifest generation mode
-				outputDir, err := cmd.Flags().GetString("output-dir")
-				if err != nil {
-					return err
-				}
-
-				if outputDir == "" {
-					outputDir = "./drasi-manifests"
-				}
-
 				if installer, err = installers.MakeManifestInstaller(namespace, outputDir); err != nil {
 					return err
 				}
@@ -191,8 +193,8 @@ Usage examples:
 	initCommand.Flags().String("dapr-sidecar-version", "latest", "Dapr sidecar (daprd) version to install.")
 	initCommand.Flags().String("dapr-registry", "docker.io/daprio", "Container registry to pull Dapr images from.")
 	initCommand.Flags().String("observability-level", "none", "Observability level to install. Options: none, metrics, tracing, full.")
-	initCommand.Flags().Bool("generate-manifests", false, "Generate YAML manifests instead of installing to a live cluster.")
-	initCommand.Flags().String("output-dir", "", "Directory to output generated manifests (default: ./drasi-manifests).")
+	initCommand.Flags().String("manifest", "", "Generate YAML manifests instead of installing to a live cluster. Optionally specify output directory (default: ./drasi-manifests).")
+	initCommand.Flags().Lookup("manifest").NoOptDefVal = "./drasi-manifests"
 
 	return initCommand
 }
