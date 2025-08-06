@@ -41,6 +41,7 @@ Usage examples:
   drasi init --docker my-container
   drasi init --registry myregistry.io/drasi --version 0.1.0
   drasi init -n my-namespace
+  drasi init --generate-manifests --output-dir ./manifests
 `,
 		Args: cobra.MinimumNArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -67,35 +68,67 @@ Usage examples:
 				return err
 			}
 
-			if useDocker {
-				dockerName := "docker"
-				if len(args) > 0 {
-					dockerName = args[0]
-				}
-
-				var dd *installers.DockerizedDeployer
-				if dd, err = installers.MakeDockerizedDeployer(); err != nil {
-					return err
-				}
-
-				reg, err := dd.Build(dockerName, local, version, output)
-				if err != nil {
-					return err
-				}
-				if err := registry.SaveRegistration(dockerName, reg); err != nil {
-					return err
-				}
-				if err := registry.SetCurrentRegistration(dockerName); err != nil {
-					return err
-				}
-			}
-
-			if containerRegistry, err = cmd.Flags().GetString("registry"); err != nil {
+			// Check if manifest generation mode is enabled
+			generateManifests, err := cmd.Flags().GetBool("generate-manifests")
+			if err != nil {
 				return err
 			}
 
 			var namespace string
 			if namespace, err = cmd.Flags().GetString("namespace"); err != nil {
+				return err
+			}
+
+			if generateManifests {
+				// Manifest generation mode
+				outputDir, err := cmd.Flags().GetString("output-dir")
+				if err != nil {
+					return err
+				}
+
+				if outputDir == "" {
+					outputDir = "./drasi-manifests"
+				}
+
+				if installer, err = installers.MakeManifestInstaller(namespace, outputDir); err != nil {
+					return err
+				}
+			} else {
+				// Normal installation mode
+				if useDocker {
+					dockerName := "docker"
+					if len(args) > 0 {
+						dockerName = args[0]
+					}
+
+					var dd *installers.DockerizedDeployer
+					if dd, err = installers.MakeDockerizedDeployer(); err != nil {
+						return err
+					}
+
+					reg, err := dd.Build(dockerName, local, version, output)
+					if err != nil {
+						return err
+					}
+					if err := registry.SaveRegistration(dockerName, reg); err != nil {
+						return err
+					}
+					if err := registry.SetCurrentRegistration(dockerName); err != nil {
+						return err
+					}
+				}
+
+				reg, err := registry.LoadCurrentRegistrationWithNamespace(namespace)
+				if err != nil {
+					return err
+				}
+
+				if installer, err = installers.MakeInstaller(reg); err != nil {
+					return err
+				}
+			}
+
+			if containerRegistry, err = cmd.Flags().GetString("registry"); err != nil {
 				return err
 			}
 
@@ -109,19 +142,12 @@ Usage examples:
 				return err
 			}
 
-			reg, err := registry.LoadCurrentRegistrationWithNamespace(namespace)
-			if err != nil {
-				return err
-			}
-
-			if installer, err = installers.MakeInstaller(reg); err != nil {
-				return err
-			}
-
 			installer.SetDaprRuntimeVersion(daprRuntimeVersion)
 			installer.SetDaprSidecarVersion(daprSidecarVersion)
 
-			if local {
+			if generateManifests {
+				fmt.Printf("Generating Drasi manifests for version %s\n", version)
+			} else if local {
 				fmt.Printf("Installing Drasi version %s with local images\n", version)
 			} else {
 				fmt.Printf("Installing Drasi with version %s from registry %s\n", version, containerRegistry)
@@ -165,6 +191,8 @@ Usage examples:
 	initCommand.Flags().String("dapr-sidecar-version", "latest", "Dapr sidecar (daprd) version to install.")
 	initCommand.Flags().String("dapr-registry", "docker.io/daprio", "Container registry to pull Dapr images from.")
 	initCommand.Flags().String("observability-level", "none", "Observability level to install. Options: none, metrics, tracing, full.")
+	initCommand.Flags().Bool("generate-manifests", false, "Generate YAML manifests instead of installing to a live cluster.")
+	initCommand.Flags().String("output-dir", "", "Directory to output generated manifests (default: ./drasi-manifests).")
 
 	return initCommand
 }

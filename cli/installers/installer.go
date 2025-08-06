@@ -46,3 +46,7 @@ func MakeInstaller(registration registry.Registration) (Installer, error) {
 		return nil, fmt.Errorf("unsupported platform: %T", client)
 	}
 }
+
+func MakeManifestInstaller(namespace string, outputDir string) (Installer, error) {
+	return MakeKubernetesManifestInstaller(namespace, outputDir)
+}
